@@ -1,0 +1,8 @@
+[package]
+name = "duscope"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Reports directory disk usage as a tree or as JSON"
+
+[dependencies]
