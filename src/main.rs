@@ -9,6 +9,7 @@ struct Options {
     json: bool,
     depth: Option<usize>,
     top: Option<usize>,
+    excludes: Vec<String>,
 }
 
 fn parse_args(args: &[String]) -> Result<Options, String> {
@@ -17,6 +18,7 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
     let mut json = false;
     let mut depth = None;
     let mut top = None;
+    let mut excludes = Vec::new();
 
     let mut i = 0;
     while i < args.len() {
@@ -40,6 +42,11 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
                         .map_err(|_| format!("invalid --top value: {value}"))?,
                 );
             }
+            "--exclude" => {
+                i += 1;
+                let value = args.get(i).ok_or("--exclude requires a pattern")?;
+                excludes.push(value.clone());
+            }
             other if !path_set && !other.starts_with('-') => {
                 path = PathBuf::from(other);
                 path_set = true;
@@ -54,18 +61,20 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
         json,
         depth,
         top,
+        excludes,
     })
 }
 
 fn print_help() {
     println!("duscope - report disk usage for a directory tree");
     println!();
-    println!("usage: duscope [path] [--json] [--depth N] [--top N]");
+    println!("usage: duscope [path] [--json] [--depth N] [--top N] [--exclude PATTERN]...");
     println!();
-    println!("  path        directory to scan (default: current directory)");
-    println!("  --json      print machine-readable JSON instead of a tree");
-    println!("  --depth N   only display N levels of the tree (scanning is always full)");
-    println!("  --top N     only display the N largest entries per directory");
+    println!("  path              directory to scan (default: current directory)");
+    println!("  --json            print machine-readable JSON instead of a tree");
+    println!("  --depth N         only display N levels of the tree (scanning is always full)");
+    println!("  --top N           only display the N largest entries per directory");
+    println!("  --exclude PATTERN skip entries whose name matches PATTERN (glob, may repeat)");
 }
 
 fn main() -> ExitCode {
@@ -84,7 +93,7 @@ fn main() -> ExitCode {
         }
     };
 
-    let entry = scan(&options.path);
+    let entry = scan(&options.path, &options.excludes);
 
     if options.json {
         println!("{}", entry.to_json());

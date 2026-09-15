@@ -41,6 +41,15 @@ Only show the biggest few entries per directory:
 $ duscope ~/Downloads --top 5
 ```
 
+Skip entries by name (glob patterns, matched against each entry's bare
+name, not its full path; repeat the flag to exclude more than one thing).
+Excluded entries are left out of the printed tree and of their parent's
+size total, not just hidden from display:
+
+```
+$ duscope . --exclude node_modules --exclude "*.log" --exclude target
+```
+
 Machine-readable output for scripts:
 
 ```
@@ -55,9 +64,10 @@ with size 0 rather than being silently dropped.
 
 ## Status
 
-Early. The scanner and both output modes work end to end. Not yet handled:
-exclude patterns, a minimum-size filter, and symlink-loop protection beyond
-"symlinks aren't followed at all" (see `src/lib.rs`).
+Early. The scanner and both output modes work end to end, and entries can
+be excluded by glob pattern. Not yet handled: a minimum-size filter, and
+symlink-loop protection beyond "symlinks aren't followed at all" (see
+`src/lib.rs`).
 
 ## License
 

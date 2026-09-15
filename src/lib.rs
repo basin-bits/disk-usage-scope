@@ -23,15 +23,21 @@ pub struct Entry {
 }
 
 /// Scans `path` and returns the root entry for the tree rooted there.
-pub fn scan(path: &Path) -> Entry {
+///
+/// `excludes` is a list of glob patterns matched against each entry's bare
+/// name (not its full path) as it's encountered; a match skips the entry
+/// entirely, so it's excluded from both the printed tree and the size
+/// totals of its ancestors. The root itself is never checked against
+/// `excludes` - if you don't want it scanned, don't pass it.
+pub fn scan(path: &Path, excludes: &[String]) -> Entry {
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.to_string_lossy().into_owned());
-    scan_inner(path, name)
+    scan_inner(path, name, excludes)
 }
 
-fn scan_inner(path: &Path, name: String) -> Entry {
+fn scan_inner(path: &Path, name: String, excludes: &[String]) -> Entry {
     // symlink_metadata (not metadata) so we see symlinks themselves instead
     // of silently following them into who-knows-where, or looping forever
     // on a self-referential link.
@@ -59,7 +65,10 @@ fn scan_inner(path: &Path, name: String) -> Entry {
                     match item {
                         Ok(dir_entry) => {
                             let child_name = dir_entry.file_name().to_string_lossy().into_owned();
-                            let child = scan_inner(&dir_entry.path(), child_name);
+                            if excludes.iter().any(|p| glob_match(p, &child_name)) {
+                                continue;
+                            }
+                            let child = scan_inner(&dir_entry.path(), child_name, excludes);
                             total += child.size;
                             children.push(child);
                         }
@@ -95,6 +104,27 @@ fn scan_inner(path: &Path, name: String) -> Entry {
         is_dir: false,
         children: Vec::new(),
         error: None,
+    }
+}
+
+/// Matches `name` against a shell-style glob pattern: `*` stands for any run
+/// of characters (including none), `?` for exactly one, everything else is
+/// literal. No brace or bracket expansion - that keeps matching predictable
+/// for the odd characters that show up in real filenames.
+fn glob_match(pattern: &str, name: &str) -> bool {
+    let p: Vec<char> = pattern.chars().collect();
+    let n: Vec<char> = name.chars().collect();
+    glob_match_chars(&p, &n)
+}
+
+fn glob_match_chars(p: &[char], n: &[char]) -> bool {
+    match p.first() {
+        None => n.is_empty(),
+        Some('*') => {
+            glob_match_chars(&p[1..], n) || (!n.is_empty() && glob_match_chars(p, &n[1..]))
+        }
+        Some('?') => !n.is_empty() && glob_match_chars(&p[1..], &n[1..]),
+        Some(c) => !n.is_empty() && n[0] == *c && glob_match_chars(&p[1..], &n[1..]),
     }
 }
 
@@ -236,5 +266,35 @@ mod tests {
         let mut out = String::new();
         escape_json_into("a \"quoted\"\tname", &mut out);
         assert_eq!(out, "a \\\"quoted\\\"\\tname");
+    }
+
+    #[test]
+    fn glob_match_literal() {
+        assert!(glob_match("target", "target"));
+        assert!(!glob_match("target", "targets"));
+        assert!(!glob_match("target", "tar"));
+    }
+
+    #[test]
+    fn glob_match_star() {
+        assert!(glob_match("*.log", "debug.log"));
+        assert!(glob_match("*.log", ".log"));
+        assert!(!glob_match("*.log", "debug.log.gz"));
+        assert!(glob_match("node_*", "node_modules"));
+        assert!(glob_match("*", ""));
+        assert!(glob_match("*", "anything"));
+    }
+
+    #[test]
+    fn glob_match_question_mark() {
+        assert!(glob_match("a?c", "abc"));
+        assert!(!glob_match("a?c", "ac"));
+        assert!(!glob_match("a?c", "abbc"));
+    }
+
+    #[test]
+    fn glob_match_mixed_wildcards() {
+        assert!(glob_match("*.?", "file.a"));
+        assert!(!glob_match("*.?", "file.ab"));
     }
 }
